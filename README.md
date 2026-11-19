@@ -88,6 +88,45 @@ already enforces. Write down only what isn't in the code: non-obvious commands,
 landmines, decisions and why they were made, and what "done" means. Delete
 sections you don't need.
 
+## Running agents in parallel
+
+The guardrails come with every parallel approach: `.claude/settings.json` is
+committed, so subagents, agent view sessions, agent teams, workflows, cloud
+project threads and `/batch` all run under the same deny rules and sandbox.
+
+The checks hook is different. It only checks **the folder of the session that
+is stopping**:
+
+| Approach | Where the Stop hook runs |
+|---|---|
+| Subagents, dynamic workflows | Once, when the main session stops, on their combined result |
+| Agent view (`claude agents`), cloud project threads | In each session, inside that session's own worktree or clone |
+| Agent teams | Only on the lead. Teammates need a `TaskCompleted` hook to be checked. |
+| `/batch` | Only on the main checkout, **not** in the worktrees the changes went into |
+
+Watch out for two things:
+
+1. **New worktrees may be missing dependencies.** A new worktree may not have
+   `node_modules`, a `.venv`, or build output. Every check then fails, and the
+   session stays blocked until the attempt limit lets it stop, which looks like
+   Claude is stuck. Install dependencies in each worktree before the work
+   starts, or have them copied in (see the worktrees docs on controlling what
+   gets copied).
+2. **`/batch` changes aren't checked by this hook.** Let CI check each branch
+   or PR it opens, or run the checks again after you merge the results.
+
+Also: several sessions running test suites on one machine at the same time can
+fight over ports, a shared local database, or CPU. If yours do, set `CHECKS` to
+a lighter list.
+
+Agent teams are experimental and off by default. They aren't enabled here
+because, once on, Claude may start teammates on its own and use many more
+tokens. To opt in just for yourself, put this in `~/.claude/settings.json`:
+
+```json
+{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
+```
+
 ## Copying this into a project
 
 From the root of your project:
