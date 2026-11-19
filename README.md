@@ -34,8 +34,8 @@ CLAUDE.md                     # template: only what Claude can't infer from the 
   tries to finish.
 - **`hooks.TaskCompleted`** runs `require-checks.sh --quick` (lint and
   typecheck, no tests) whenever a task is marked complete. This is what checks
-  agent-team teammates. It also fires in a normal session when Claude ticks off
-  a task on its task list.
+  agent-team teammates. It may also fire when Claude marks a task complete in
+  a normal session; that's harmless, because the quick checks are fast.
 
 > Bash deny rules match command **prefixes**, so a determined variant (for
 > example `git -C . push --force`) can slip past them. Treat them as guardrails,
