@@ -32,6 +32,10 @@ CLAUDE.md                     # template: only what Claude can't infer from the 
   - reading or editing `.env` / `.env.*` files and anything under `secrets/`
 - **`hooks.Stop`** registers `require-checks.sh` so it runs every time Claude
   tries to finish.
+- **`hooks.TaskCompleted`** runs `require-checks.sh --quick` (lint and
+  typecheck, no tests) whenever a task is marked complete. This is what checks
+  agent-team teammates. It also fires in a normal session when Claude ticks off
+  a task on its task list.
 
 > Bash deny rules match command **prefixes**, so a determined variant (for
 > example `git -C . push --force`) can slip past them. Treat them as guardrails,
@@ -80,6 +84,12 @@ is really stuck can't loop forever. The counter resets as soon as checks pass.
 Checks can take a while, so the hook has a 600-second timeout in
 `settings.json`. Keep your checks fast, or set `CHECKS` to a quick subset.
 
+**`--quick` mode** (used on `TaskCompleted`) runs only lint and typecheck:
+`go vet`, clippy and ruff run, while tests and pytest are skipped. To pin those
+commands, fill in the `QUICK_CHECKS` array. Quick mode never runs `CHECKS`,
+because that list may contain tests. Each teammate gets its own attempt
+counter.
+
 ### `CLAUDE.md`
 
 A deliberately short template. Claude can read your code, so don't spend
@@ -101,7 +111,7 @@ is stopping**:
 |---|---|
 | Subagents, dynamic workflows | Once, when the main session stops, on their combined result |
 | Agent view (`claude agents`), cloud project threads | In each session, inside that session's own worktree or clone |
-| Agent teams | Only on the lead. Teammates need a `TaskCompleted` hook to be checked. |
+| Agent teams | Full checks on the lead's `Stop`; quick checks on each teammate's `TaskCompleted` |
 | `/batch` | Only on the main checkout, **not** in the worktrees the changes went into |
 
 Watch out for two things:
@@ -119,13 +129,43 @@ Also: several sessions running test suites on one machine at the same time can
 fight over ports, a shared local database, or CPU. If yours do, set `CHECKS` to
 a lighter list.
 
-Agent teams are experimental and off by default. They aren't enabled here
-because, once on, Claude may start teammates on its own and use many more
-tokens. To opt in just for yourself, put this in `~/.claude/settings.json`:
+## Using agent teams
 
-```json
-{ "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
-```
+Agent teams are experimental and off by default. This repo doesn't turn them
+on for everyone, because once they're on Claude may start teammates on its own
+and use many more tokens. Opt in for yourself:
+
+1. Add this to `~/.claude/settings.json` on your machine (merge it with any
+   existing `env` block):
+   ```json
+   { "env": { "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1" } }
+   ```
+2. Start `claude` in the project, in an ordinary interactive session. Teams
+   don't start with `-p` or in the Agent SDK.
+3. Ask for a team, and give each teammate its own files. Teammates share one
+   checkout, so two teammates editing the same file overwrite each other:
+   ```text
+   Create an agent team with 3 teammates: "api" owns src/api/, "ui" owns
+   src/ui/, "tests" owns tests/. Each one marks its tasks complete only when
+   its own part is done. Wait for all of them before you finish.
+   ```
+4. Use the agent panel under the prompt: arrow keys to pick a teammate, Enter
+   to view and message it, Ctrl+T for the task list.
+
+How the guardrails apply:
+
+- **Permissions:** teammates start in the lead's mode (auto here) and are bound
+  by the same deny rules. Their permission prompts show up in the lead's
+  session.
+- **Task gate:** a teammate can't mark a task complete while lint or typecheck
+  fails. If the failure is in another teammate's files, the hook tells it to
+  message that teammate instead of fixing it.
+- **Final gate:** the full checks, tests included, run when the lead tries to
+  finish.
+
+Start with 3 to 5 teammates, and try it first on research or review tasks
+that don't write code. Each teammate is a full Claude session, so cost goes up
+with team size.
 
 ## Copying this into a project
 
